@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Population Pyramids</title>
+<meta name="description" content="Move over a country to see its population pyramid, 1950 to 2100, from UN World Population Prospects 2024.">
+<script type="module" src="https://js.arcgis.com/5.1/"></script>
+<link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f6f6f3;
+    --surface: #ffffff;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #66655f;
+    --line: #e1e0d9;
+    --axis: #c3c2b7;
+    --male: #2a78d6;
+    --female: #eb6834;
+    --ocean: #e9eff3;
+    --focus: #1c5cab;
+    --panel-w: 400px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--page); color: var(--ink); display: grid; grid-template-rows: auto 1fr; height: 100dvh; overflow: hidden; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .skip-link { position: absolute; left: 8px; top: -48px; background: var(--surface); color: var(--ink); padding: 8px 12px; border: 2px solid var(--focus); border-radius: 6px; z-index: 50; }
+  .skip-link:focus { top: 8px; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button, select, input { font: inherit; }
+
+  /* ---------- top bar ---------- */
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .topbar h1 { font-size: 1.15rem; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .ver { font-size: 0.72rem; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; white-space: nowrap; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-left: auto; }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field label { font-size: 0.85rem; color: var(--ink-2); font-weight: 600; }
+  select { min-height: 36px; padding: 4px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--ink); max-width: 230px; }
+  input[type=range] { width: 180px; accent-color: var(--focus); }
+  output { font-variant-numeric: tabular-nums; font-weight: 650; min-width: 3.2em; }
+  .btn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn:hover { background: #f1f0ec; }
+  .btn[aria-pressed="true"] { background: #e8eef8; border-color: var(--focus); }
+
+  /* ---------- layout ---------- */
+  main { display: grid; grid-template-columns: 1fr var(--panel-w); min-height: 0; }
+  .map-wrap { position: relative; min-height: 0; }
+  #viewDiv { position: absolute; inset: 0; background: var(--ocean); }
+  #viewDiv .esri-view-surface { cursor: default; }
+  .map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.94); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 0.85rem; color: var(--ink-2); pointer-events: none; white-space: nowrap; }
+  .chip { position: absolute; pointer-events: none; background: var(--ink); color: #fff; font-size: 0.8rem; padding: 3px 8px; border-radius: 4px; transform: translate(12px, -28px); white-space: nowrap; display: none; z-index: 5; }
+  .map-msg { position: absolute; inset: auto 16px 48px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; display: none; }
+  .legend { position: absolute; left: 12px; bottom: 34px; background: rgba(255,255,255,0.96); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 0.78rem; }
+  .legend summary { cursor: pointer; }
+  .legend h3 { display: inline; margin: 0; font-size: 0.8rem; font-weight: 650; }
+  .legend ul { margin-top: 6px !important; }
+  .legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, auto); gap: 3px 12px; }
+  .legend li { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .sw { width: 16px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.35); flex: none; }
+
+  /* ---------- panel ---------- */
+  .panel { background: var(--surface); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px 16px 64px; }
+  .p-head { display: flex; align-items: flex-start; gap: 8px; }
+  .p-head h2 { margin: 0; font-size: 1.35rem; line-height: 1.2; font-weight: 650; flex: 1; }
+  .pin-state { font-size: 0.75rem; color: var(--ink-2); margin: 4px 0 0; }
+  .p-note { font-size: 0.85rem; color: var(--ink-2); margin: 4px 0 0; }
+  .p-sub { margin: 4px 0 10px; color: var(--ink-2); font-size: 0.9rem; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0 0 12px; }
+  .stats div { background: var(--page); border-radius: 8px; padding: 8px 10px; }
+  .stats dt { font-size: 0.75rem; color: var(--ink-2); }
+  .stats dd { margin: 2px 0 0; font-size: 1.1rem; font-weight: 650; }
+  figure { margin: 0; position: relative; }
+  #pyramid { width: 100%; height: auto; display: block; }
+  #pyramid text { font-family: inherit; }
+  figcaption { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: #fff; font-size: 0.8rem; padding: 4px 8px; border-radius: 4px; white-space: nowrap; display: none; z-index: 3; }
+  .nodata { background: var(--page); border-radius: 8px; padding: 14px; color: var(--ink-2); }
+  .table-wrap { margin-top: 8px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  caption { text-align: left; font-size: 0.8rem; color: var(--ink-2); padding-bottom: 4px; }
+  th, td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font-weight: 650; }
+  .source { font-size: 0.75rem; color: var(--ink-2); margin-top: 14px; line-height: 1.45; }
+  a { color: var(--focus); }
+
+  /* ---------- credit + dialog ---------- */
+  .credit { position: fixed; right: 12px; bottom: 12px; background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; color: var(--ink-2); z-index: 20; }
+  dialog { max-width: 680px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; color: var(--ink); }
+  dialog::backdrop { background: rgba(0,0,0,0.35); }
+  dialog h2 { margin-top: 0; font-size: 1.2rem; }
+  dialog h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+  dialog p, dialog li { font-size: 0.9rem; line-height: 1.5; }
+  .dlg-close { float: right; }
+  #versionTable th, #versionTable td { text-align: left; vertical-align: top; }
+
+  @media (max-width: 820px) {
+    body { overflow: auto; height: auto; min-height: 100dvh; }
+    main { grid-template-columns: 1fr; grid-template-rows: 48dvh auto; }
+    .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+    .controls { margin-left: 0; }
+    input[type=range] { width: 140px; }
+    .legend { bottom: 30px; font-size: 0.72rem; }
+    .map-hint { display: none; }
+    .credit { position: static; justify-self: end; margin: 4px 12px 14px; }
+    .panel { padding-bottom: 16px; }
+  }
+  @media (forced-colors: active) {
+    .sw, .stats div { forced-color-adjust: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#panel">Skip to population pyramid</a>
+
+<header class="topbar">
+  <h1>World population pyramids <span class="ver" id="appVer"></span></h1>
+  <div class="controls">
+    <div class="field">
+      <label for="countrySelect">Country</label>
+      <select id="countrySelect"></select>
+    </div>
+    <div class="field">
+      <label for="yearRange">Year</label>
+      <input type="range" id="yearRange" min="1950" max="2100" step="5" value="2025">
+      <output id="yearOut" for="yearRange">2025</output>
+      <button class="btn" id="playBtn" type="button" aria-pressed="false">Play</button>
+    </div>
+    <button class="btn" id="aboutBtn" type="button">About</button>
+  </div>
+</header>
+
+<main>
+  <section class="map-wrap" aria-label="World map of median age. Move the pointer over a country to see its population pyramid. Click a country to pin it. You can also choose a country from the Country list.">
+    <div id="viewDiv"></div>
+    <div class="map-hint" id="mapHint" aria-hidden="true">Move over a country · click to pin</div>
+    <div class="chip" id="chip" aria-hidden="true"></div>
+    <details class="legend" id="legend" open></details>
+    <div class="map-msg" id="mapMsg" role="status"></div>
+  </section>
+
+  <aside class="panel" id="panel" tabindex="-1" aria-labelledby="pTitle">
+    <div class="p-head">
+      <h2 id="pTitle">World</h2>
+      <button class="btn" id="unpinBtn" type="button" hidden>Unpin</button>
+    </div>
+    <p class="pin-state" id="pinState" hidden>Pinned. Unpin (or press Esc) to go back to hovering.</p>
+    <p class="p-note" id="pNote" hidden></p>
+    <p class="p-sub" id="pSub"></p>
+    <div id="pBody"></div>
+    <p class="source">
+      Data: United Nations, Department of Economic and Social Affairs, Population Division (2024).
+      <a href="https://population.un.org/wpp/" target="_blank" rel="noopener">World Population Prospects 2024</a>,
+      <a href="https://creativecommons.org/licenses/by/3.0/igo/" target="_blank" rel="noopener">CC BY 3.0 IGO</a>.
+      Adapted: mid-year figures grouped into 5-year age bands. Boundaries: Esri World Countries (Generalized).
+    </p>
+  </aside>
+</main>
+
+<div class="credit">Created by Jason Sawle</div>
+<div class="sr-only" id="live" aria-live="polite"></div>
+
+<dialog id="about" aria-labelledby="aboutTitle">
+  <button class="btn dlg-close" id="aboutClose" type="button">Close</button>
+  <h2 id="aboutTitle">About this map</h2>
+  <p>A population pyramid shows how many males and females there are in each 5-year age group. Wide bases point to many young people; straighter sides and wide tops point to an older population.</p>
+  <h3>How to use it</h3>
+  <ul>
+    <li>Move the pointer over a country to see its pyramid. Click a country to pin it so you can read it closely; click the sea, press <kbd>Esc</kbd> or choose Unpin to go back.</li>
+    <li>On touch screens, tap a country. You can also pick any country or area from the Country list.</li>
+    <li>Use the Year slider (or Play) to see how a pyramid changes from 1950 to 2100. Years up to 2020 are UN estimates; 2025 onwards are UN projections (medium variant).</li>
+    <li>Bars show each group's share of the whole population, so countries of different sizes can be compared. The scale is fixed for each country across all years, so you can watch it change. Use “Show as table” to read the exact values.</li>
+    <li>Countries on the map are shaded by median age: half the population is younger than this, half older.</li>
+  </ul>
+  <h3>Data and method</h3>
+  <p>Population by age and sex comes from the United Nations <a href="https://population.un.org/wpp/" target="_blank" rel="noopener">World Population Prospects 2024</a> (via the <a href="https://github.com/PPgp/wpp2024" target="_blank" rel="noopener">wpp2024</a> data package), licensed <a href="https://creativecommons.org/licenses/by/3.0/igo/" target="_blank" rel="noopener">CC BY 3.0 IGO</a>. The UN has not reviewed or endorsed this map. Figures are for 1 July of each year, grouped into 5-year age bands (100+ as the top band). Totals were checked against the UN's published figures (for example, world population in 2025: 8,231,613,070). Median age was checked against the UN's published values.</p>
+  <p>Country boundaries: Esri World Countries (Generalized), sources: Esri; Garmin International, Inc.; U.S. Central Intelligence Agency (The World Factbook); National Geographic Society. Some territories (for example Antarctica) have no separate UN figures; a few small areas are counted within another country by the UN.</p>
+  <h3>Versions</h3>
+  <table id="versionTable">
+    <caption>App and model versions</caption>
+    <thead><tr><th scope="col">Part</th><th scope="col">Version</th><th scope="col">What it covers</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</dialog>
+
+<script id="pyramid-data" type="application/json">/*__DATA__*/</script>
+
+<script type="module">
+/* ============================================================
+   World Population Pyramids
+   ============================================================ */
+const APP_VERSION = "1.0.0";
+const MODELS = {
+  pyramid: { label: "Pyramid data", v: "1.0", desc: "UN WPP 2024 single-year ages for 1 July (mean of the 1 January values either side), grouped into 5-year bands; people per band kept to 3 significant figures; bars show share of total population." },
+  median:  { label: "Median age",   v: "1.0", desc: "Interpolated from single-year ages; matches the UN's published median age." },
+  shading: { label: "Map shading",  v: "1.0", desc: "Countries shaded by median age in 7 fixed classes, the same for every year." },
+};
+const COUNTRIES_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/World_Countries_(Generalized)/FeatureServer/0";
+
+const DATA = JSON.parse(document.getElementById("pyramid-data").textContent);
+const YEARS = DATA.years;
+const AGES = DATA.ages;
+const FIRST_PROJECTION_YEAR = 2025;
+
+// Areas on the map with no separate UN age data
+const PART_OF = { CC: "AU", CX: "AU", NF: "AU", SJ: "NO" };
+const NO_AGE_DATA_NOTE = { VA: "The UN publishes no age breakdown for Vatican City (Holy See)." };
+
+// Map shading (median age classes)
+const BREAKS = [20, 25, 30, 35, 40, 45];
+const RAMP = ["#e2d8f8", "#c8b6eb", "#ae96da", "#9577c7", "#7b5aae", "#61418f", "#472c6d"];
+const NODATA_FILL = "#d9d8d2";
+const CLASS_LABELS = ["Under 20", "20 to 25", "25 to 30", "30 to 35", "35 to 40", "40 to 45", "45 and over"];
+const OCEAN = "#e9eff3";
+
+const $ = (id) => document.getElementById(id);
+const nf3 = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 });
+const nf0 = new Intl.NumberFormat("en-US");
+
+const state = {
+  year: 2025,
+  shownIso: "WORLD",
+  shownName: "World",
+  pinned: false,
+  tableOpen: false,
+  playing: null,
+};
+
+/* ---------------- data helpers ---------------- */
+const yIndex = (year) => YEARS.indexOf(year);
+function row(iso, year) {
+  const a = DATA.areas[iso];
+  if (!a) return null;
+  const r = a.y[yIndex(year)];
+  return { total: r[0], median: r[1], m: r.slice(2, 23), f: r.slice(23, 44) }; // people per age group (3 s.f.)
+}
+const scaleCache = {};
+function scaleFor(iso) {
+  if (scaleCache[iso]) return scaleCache[iso];
+  let mx = 0;
+  for (const r of DATA.areas[iso].y) for (let i = 2; i < 44; i++) if (r[i] / r[0] > mx) mx = r[i] / r[0];
+  const pct = mx * 100;
+  const nice = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30].find((n) => n >= pct) || Math.ceil(pct);
+  return (scaleCache[iso] = nice);
+}
+function fmtPeople(n) {
+  if (n >= 1e9) return nf3.format(n / 1e9) + " billion";
+  if (n >= 1e6) return nf3.format(n / 1e6) + " million";
+  if (n >= 1e3) return nf3.format(n);
+  return nf0.format(Math.round(n));
+}
+const fmtPct = (p) => p.toFixed(p < 1 ? 2 : 1) + "%"; // p is a percentage
+const sum = (a) => a.reduce((s, v) => s + v, 0);
+const ageLabel = (a) => a.replace("-", "–");
+const isProjection = (y) => y >= FIRST_PROJECTION_YEAR;
+const yearNote = (y) => (isProjection(y) ? "UN projection (medium variant)" : "UN estimate");
+const medianClass = (m) => BREAKS.filter((b) => m >= b).length;
+
+/* ---------------- panel rendering ---------------- */
+function render() {
+  const iso = state.shownIso;
+  const area = DATA.areas[iso];
+  $("pTitle").textContent = state.shownName;
+  $("pSub").textContent = `${state.year} · ${yearNote(state.year)}`;
+  const note = $("pNote");
+  note.hidden = true;
+
+  if (!area) {
+    // Area on the map with no separate UN figures
+    const parent = PART_OF[iso];
+    let msg = NO_AGE_DATA_NOTE[iso] || "There are no UN population figures for this area.";
+    if (parent && DATA.areas[parent]) msg = `The UN counts this area as part of ${DATA.areas[parent].n}.`;
+    $("pBody").innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "nodata";
+    box.textContent = msg;
+    if (parent && DATA.areas[parent]) {
+      const b = document.createElement("button");
+      b.className = "btn"; b.type = "button"; b.style.marginTop = "10px";
+      b.textContent = `Show ${DATA.areas[parent].n}`;
+      b.addEventListener("click", () => selectArea(parent, DATA.areas[parent].n, { pin: true, announce: true }));
+      box.append(document.createElement("br"), b);
+    }
+    $("pBody").append(box);
+    return;
+  }
+
+  if (state.shownName !== area.n) {
+    note.textContent = `UN figures are for ${area.n}.`;
+    note.hidden = false;
+  }
+  const r = row(iso, state.year);
+  const groupTotal = sum(r.m) + sum(r.f);
+  const under15 = ((sum(r.m.slice(0, 3)) + sum(r.f.slice(0, 3))) / groupTotal) * 100;
+  const over65 = ((sum(r.m.slice(13)) + sum(r.f.slice(13))) / groupTotal) * 100;
+
+  const body = $("pBody");
+  body.innerHTML = `
+    <dl class="stats">
+      <div><dt>Population</dt><dd>${fmtPeople(r.total)}</dd></div>
+      <div><dt>Median age <span class="ver" title="Median age model version">v${MODELS.median.v}</span></dt><dd>${r.median.toFixed(1)} years</dd></div>
+      <div><dt>Aged under 15</dt><dd>${fmtPct(under15)}</dd></div>
+      <div><dt>Aged 65 and over</dt><dd>${fmtPct(over65)}</dd></div>
+    </dl>
+    <figure>
+      <svg id="pyramid" viewBox="0 0 360 336" role="img" aria-labelledby="pyrLabel"><title id="pyrLabel"></title></svg>
+      <div class="tip" id="tip" aria-hidden="true"></div>
+      <figcaption>Share of total population in each 5-year age group · Pyramid data <span class="ver">v${MODELS.pyramid.v}</span></figcaption>
+    </figure>
+    <button class="btn" id="tableBtn" type="button" aria-expanded="${state.tableOpen}" aria-controls="tableWrap" style="margin-top:8px">${state.tableOpen ? "Hide table" : "Show as table"}</button>
+    <div class="table-wrap" id="tableWrap" ${state.tableOpen ? "" : "hidden"}></div>`;
+  $("pyrLabel").textContent = `Population pyramid for ${state.shownName}, ${state.year}. ` +
+    `${fmtPct(under15)} of people are under 15 and ${fmtPct(over65)} are 65 or over. Use Show as table for every age group.`;
+  drawPyramid($("pyramid"), r, scaleFor(iso));
+  buildTable($("tableWrap"), r);
+  $("tableBtn").addEventListener("click", () => {
+    state.tableOpen = !state.tableOpen;
+    $("tableBtn").setAttribute("aria-expanded", state.tableOpen);
+    $("tableBtn").textContent = state.tableOpen ? "Hide table" : "Show as table";
+    $("tableWrap").hidden = !state.tableOpen;
+  });
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs, text) {
+  const n = document.createElementNS(SVGNS, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  return n;
+}
+function barPath(x0, x1, y, h, dir) {
+  // Bar from baseline x0 out to x1, square at the baseline, rounded at the data end.
+  const w = Math.abs(x1 - x0);
+  const r = Math.min(4, h / 2, w);
+  if (dir < 0) { // grows left
+    return `M${x0},${y} H${x1 + r} A${r},${r} 0 0 0 ${x1},${y + r} V${y + h - r} A${r},${r} 0 0 0 ${x1 + r},${y + h} H${x0} Z`;
+  }
+  return `M${x0},${y} H${x1 - r} A${r},${r} 0 0 1 ${x1},${y + r} V${y + h - r} A${r},${r} 0 0 1 ${x1 - r},${y + h} H${x0} Z`;
+}
+function drawPyramid(svg, r, scale) {
+  const W = 360, TOP = 28, BOT = 34, H = 336, GUT = 48, PAD = 18;
+  const half = (W - GUT) / 2 - PAD;
+  const xL = PAD + half;          // male baseline
+  const xR = xL + GUT;            // female baseline
+  const n = AGES.length;
+  const rowH = (H - TOP - BOT) / n;
+  const barH = rowH - 2;          // 2px gap between bars
+  const px = (count) => ((count / r.total) * 100 / scale) * half;
+  const g = el("g", {});
+
+  // headers + legend swatches (identity never by colour alone)
+  g.append(el("rect", { x: PAD, y: 6, width: 12, height: 12, rx: 2, style: "fill:var(--male)" }));
+  g.append(el("text", { x: PAD + 18, y: 16, "font-size": 12, "font-weight": 650, style: "fill:var(--ink)" }, "Male"));
+  g.append(el("rect", { x: W - PAD - 12, y: 6, width: 12, height: 12, rx: 2, style: "fill:var(--female)" }));
+  g.append(el("text", { x: W - PAD - 18, y: 16, "font-size": 12, "font-weight": 650, style: "fill:var(--ink)", "text-anchor": "end" }, "Female"));
+  g.append(el("text", { x: W / 2, y: 16, "font-size": 10.5, style: "fill:var(--muted)", "text-anchor": "middle" }, "Age"));
+
+  // gridlines + tick labels
+  const ticks = [0, scale / 2, scale];
+  const yAxis = H - BOT + 2;
+  for (const t of ticks) {
+    for (const side of [-1, 1]) {
+      const x = side < 0 ? xL - (t / scale) * half : xR + (t / scale) * half;
+      g.append(el("line", { x1: x, x2: x, y1: TOP, y2: yAxis, style: `stroke:var(${t === 0 ? "--axis" : "--line"});stroke-width:1` }));
+      const lbl = t === 0 ? "0" : `${+t.toFixed(1)}%`;
+      g.append(el("text", { x, y: yAxis + 13, "font-size": 10.5, style: "fill:var(--muted)", "text-anchor": "middle" }, lbl));
+    }
+  }
+  g.append(el("text", { x: W / 2, y: H - 2, "font-size": 10.5, style: "fill:var(--muted)", "text-anchor": "middle" }, "Share of total population"));
+
+  // bars, age labels, hit areas
+  const tip = $("tip");
+  for (let i = 0; i < n; i++) {
+    const y = TOP + (n - 1 - i) * rowH + 1;
+    const wm = px(r.m[i]), wf = px(r.f[i]);
+    if (wm > 0.3) g.append(el("path", { d: barPath(xL, xL - wm, y, barH, -1), style: "fill:var(--male)" }));
+    if (wf > 0.3) g.append(el("path", { d: barPath(xR, xR + wf, y, barH, 1), style: "fill:var(--female)" }));
+    g.append(el("text", { x: W / 2, y: y + barH / 2 + 3.6, "font-size": 10, style: "fill:var(--ink-2)", "text-anchor": "middle" }, ageLabel(AGES[i])));
+    for (const [sex, x, w, count] of [["Male", PAD, half, r.m[i]], ["Female", xR, half, r.f[i]]]) {
+      const hit = el("rect", { x, y: y - 1, width: w, height: rowH, fill: "transparent" });
+      hit.addEventListener("pointerenter", () => {
+        tip.textContent = `${sex}, ${ageLabel(AGES[i])}: ${fmtPct((count / r.total) * 100)} (${fmtPeople(count)} people)`;
+        tip.style.display = "block";
+      });
+      hit.addEventListener("pointermove", (ev) => {
+        const box = svg.parentElement.getBoundingClientRect();
+        let left = ev.clientX - box.left + 10;
+        const tw = tip.offsetWidth;
+        if (left + tw > box.width) left = ev.clientX - box.left - tw - 10;
+        tip.style.left = Math.max(0, left) + "px";
+        tip.style.top = (ev.clientY - box.top - 30) + "px";
+      });
+      hit.addEventListener("pointerleave", () => (tip.style.display = "none"));
+      g.append(hit);
+    }
+  }
+  svg.append(g);
+}
+function buildTable(wrap, r) {
+  const rows = AGES.map((a, i) => i).reverse().map((i) => `
+    <tr><th scope="row">${ageLabel(AGES[i])}</th>
+    <td>${fmtPct((r.m[i] / r.total) * 100)}</td><td>${fmtPeople(r.m[i])}</td>
+    <td>${fmtPct((r.f[i] / r.total) * 100)}</td><td>${fmtPeople(r.f[i])}</td></tr>`).join("");
+  wrap.innerHTML = `<table>
+    <caption>${state.shownName}, ${state.year}: people in each age group (share of total population)</caption>
+    <thead><tr><th scope="col">Age</th><th scope="col">Male %</th><th scope="col">Male people</th><th scope="col">Female %</th><th scope="col">Female people</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/* ---------------- selection + controls ---------------- */
+function announce(msg) {
+  const live = $("live");
+  live.textContent = "";
+  setTimeout(() => (live.textContent = msg), 30);
+}
+function summaryText() {
+  const r = row(state.shownIso, state.year);
+  if (!r) return `${state.shownName}: no UN age data.`;
+  return `${state.shownName}, ${state.year}. Population ${fmtPeople(r.total)}, median age ${r.median.toFixed(1)} years.`;
+}
+let mapApi = null; // set once the map is ready
+function selectArea(iso, name, { pin = false, announce: say = false, fromMap = false } = {}) {
+  state.shownIso = iso || "";
+  state.shownName = name || (DATA.areas[iso] ? DATA.areas[iso].n : iso);
+  if (pin) setPinned(true);
+  const sel = $("countrySelect");
+  sel.value = DATA.areas[iso] ? iso : "";
+  render();
+  if (say) announce(summaryText());
+  if (pin && !fromMap && mapApi) mapApi.highlightIso(iso);
+  updateUrl();
+}
+function setPinned(on) {
+  state.pinned = on;
+  $("unpinBtn").hidden = !on;
+  $("pinState").hidden = !on;
+  if (!on && mapApi) mapApi.clearPinned();
+}
+function setYear(y, { say = false } = {}) {
+  state.year = y;
+  $("yearRange").value = y;
+  $("yearOut").textContent = y;
+  $("yearRange").setAttribute("aria-valuetext", `${y}, ${yearNote(y)}`);
+  render();
+  if (mapApi) mapApi.updateShading();
+  if (say) announce(summaryText());
+  updateUrl();
+}
+function updateUrl() {
+  const p = new URLSearchParams(location.search);
+  p.set("year", state.year);
+  if (state.pinned && state.shownIso !== "WORLD") p.set("country", state.shownIso); else p.delete("country");
+  history.replaceState(null, "", `${location.pathname}?${p}`);
+}
+
+function initControls() {
+  $("appVer").textContent = `v${APP_VERSION}`;
+  // country list
+  const sel = $("countrySelect");
+  const entries = Object.entries(DATA.areas).filter(([k]) => k !== "WORLD").sort((a, b) => a[1].n.localeCompare(b[1].n));
+  sel.append(new Option("World", "WORLD"));
+  for (const [iso, a] of entries) sel.append(new Option(a.n, iso));
+  sel.addEventListener("change", () => {
+    const iso = sel.value;
+    if (iso === "WORLD") { setPinned(false); selectArea("WORLD", "World", { announce: true }); return; }
+    selectArea(iso, DATA.areas[iso].n, { pin: true, announce: true });
+  });
+  // year
+  const yr = $("yearRange");
+  yr.addEventListener("input", () => setYear(+yr.value));
+  yr.addEventListener("change", () => announce(summaryText()));
+  $("playBtn").addEventListener("click", togglePlay);
+  $("unpinBtn").addEventListener("click", () => { setPinned(false); updateUrl(); announce("Unpinned. Move over the map to see other countries."); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.pinned && !$("about").open) { setPinned(false); updateUrl(); }
+  });
+  // about dialog + versions
+  const tb = document.querySelector("#versionTable tbody");
+  tb.innerHTML = `<tr><td>App</td><td>${APP_VERSION}</td><td>Whole app (map, panel, controls)</td></tr>` +
+    Object.values(MODELS).map((m) => `<tr><td>${m.label}</td><td>${m.v}</td><td>${m.desc}</td></tr>`).join("");
+  $("aboutBtn").addEventListener("click", () => $("about").showModal());
+  $("aboutClose").addEventListener("click", () => $("about").close());
+  // legend
+  $("legend").innerHTML = `<summary><h3>Median age (years) <span class="ver">shading v${MODELS.shading.v}</span></h3></summary><ul>` +
+    RAMP.map((c, i) => `<li><span class="sw" style="background:${c}"></span>${CLASS_LABELS[i]}</li>`).join("") +
+    `<li><span class="sw" style="background:${NODATA_FILL}"></span>No UN data</li></ul>`;
+  if (window.matchMedia("(max-width: 820px)").matches) $("legend").open = false;
+}
+function togglePlay() {
+  const btn = $("playBtn");
+  if (state.playing) {
+    clearInterval(state.playing); state.playing = null;
+    btn.textContent = "Play"; btn.setAttribute("aria-pressed", "false");
+    announce(summaryText());
+    return;
+  }
+  if (state.year >= 2100) setYear(1950);
+  btn.textContent = "Pause"; btn.setAttribute("aria-pressed", "true");
+  state.playing = setInterval(() => {
+    if (state.year >= 2100) { togglePlay(); return; }
+    setYear(state.year + 5);
+  }, 900);
+}
+
+/* ---------------- map ---------------- */
+async function waitForArcGIS(ms = 15000) {
+  const t0 = Date.now();
+  while (!window.$arcgis) {
+    if (Date.now() - t0 > ms) throw new Error("ArcGIS Maps SDK did not load");
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+function fill(color) {
+  return { type: "simple-fill", color, outline: { color: [70, 70, 70, 0.6], width: 0.4 } };
+}
+function buildRenderer() {
+  const yi = yIndex(state.year);
+  const infos = [];
+  for (const [iso, a] of Object.entries(DATA.areas)) {
+    if (iso === "WORLD") continue;
+    const med = a.y[yi][1];
+    for (const code of a.iso || [iso]) infos.push({ value: code, label: a.n, symbol: fill(RAMP[medianClass(med)]) });
+  }
+  return { type: "unique-value", field: "ISO", defaultSymbol: fill(NODATA_FILL), defaultLabel: "No UN data", uniqueValueInfos: infos };
+}
+function showMapMsg(text) { const m = $("mapMsg"); m.textContent = text; m.style.display = "block"; }
+
+async function initMap() {
+  await waitForArcGIS();
+  const [Map, MapView, FeatureLayer, Extent, reactiveUtils] = await $arcgis.import([
+    "@arcgis/core/Map.js", "@arcgis/core/views/MapView.js",
+    "@arcgis/core/layers/FeatureLayer.js", "@arcgis/core/geometry/Extent.js",
+    "@arcgis/core/core/reactiveUtils.js",
+  ]);
+
+  const makeLayer = () => new FeatureLayer({
+    url: COUNTRIES_URL,
+    outFields: ["COUNTRY", "ISO"],
+    renderer: buildRenderer(),
+    popupEnabled: false,
+    title: "Countries shaded by median age",
+  });
+
+  // Equal Earth (equal-area) world view. If it fails or draws nothing, rebuild in Web Mercator.
+  const forceMercator = new URLSearchParams(location.search).get("sr") === "3857";
+  const EXTENTS = {
+    8857: { xmin: -17300000, ymin: -8450000, xmax: 17300000, ymax: 8450000, spatialReference: { wkid: 8857 } },
+    3857: { xmin: -20037508, ymin: -8500000, xmax: 20037508, ymax: 16500000, spatialReference: { wkid: 3857 } },
+  };
+  async function makeView(wkid) {
+    const layer = makeLayer();
+    const view = new MapView({
+      container: "viewDiv",
+      map: new Map({ layers: [layer] }),
+      spatialReference: { wkid },
+      extent: new Extent(EXTENTS[wkid]),
+      background: { color: OCEAN },
+      constraints: { rotationEnabled: false, maxScale: 1500000 },
+      popupEnabled: false,
+    });
+    try {
+      await view.when();
+      const layerView = await view.whenLayerView(layer);
+      await Promise.race([
+        reactiveUtils.whenOnce(() => !layerView.updating),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Country layer timed out")), 20000)),
+      ]);
+      const drawn = await layerView.queryFeatureCount();
+      if (!drawn) throw new Error("Country layer drew no features");
+      return { view, layerView, layer };
+    } catch (err) {
+      view.destroy();
+      throw err;
+    }
+  }
+  let built;
+  try {
+    built = await makeView(forceMercator ? 3857 : 8857);
+  } catch (err) {
+    if (forceMercator) throw err;
+    console.warn("Equal Earth view failed, using Web Mercator", err);
+    built = await makeView(3857);
+  }
+  const { view, layerView, layer: countries } = built;
+  view.constraints.minScale = view.scale * 1.6;
+
+  let hoverHandle = null, hoverOid = null, pinHandle = null, seq = 0, pending = false, lastEvt = null;
+  const chip = $("chip");
+  const oidField = countries.objectIdField;
+
+  function setHover(graphic) {
+    const oid = graphic ? graphic.attributes[oidField] : null;
+    if (oid === hoverOid) return;
+    hoverOid = oid;
+    if (hoverHandle) { hoverHandle.remove(); hoverHandle = null; }
+    if (graphic) hoverHandle = layerView.highlight(graphic);
+  }
+  async function hit(evt) {
+    const my = ++seq;
+    const res = await view.hitTest(evt, { include: [countries] });
+    if (my !== seq) return undefined; // a newer pointer event has superseded this one
+    const r = res.results.find((x) => x.type === "graphic" && x.graphic.layer === countries);
+    return r ? r.graphic : null;
+  }
+  view.on("pointer-move", (evt) => {
+    lastEvt = evt;
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(async () => {
+      pending = false;
+      const e = lastEvt;
+      const g = await hit(e);
+      if (g === undefined) return;
+      setHover(g);
+      view.container.style.cursor = g ? "pointer" : "default";
+      if (g) {
+        chip.textContent = g.attributes.COUNTRY;
+        chip.style.left = e.x + "px"; chip.style.top = e.y + "px"; chip.style.display = "block";
+        if (!state.pinned && (g.attributes.ISO !== state.shownIso || g.attributes.COUNTRY !== state.shownName)) {
+          selectArea(g.attributes.ISO, g.attributes.COUNTRY, { fromMap: true });
+        }
+      } else {
+        chip.style.display = "none";
+      }
+    });
+  });
+  view.on("pointer-leave", () => { seq++; setHover(null); chip.style.display = "none"; });
+  view.on("click", async (evt) => {
+    const g = await hit(evt);
+    if (g === undefined) return;
+    if (g) {
+      if (pinHandle) pinHandle.remove();
+      pinHandle = layerView.highlight(g);
+      selectArea(g.attributes.ISO, g.attributes.COUNTRY, { pin: true, announce: true, fromMap: true });
+    } else if (state.pinned) {
+      setPinned(false); updateUrl();
+    }
+  });
+
+  mapApi = {
+    updateShading() { countries.renderer = buildRenderer(); },
+    clearPinned() { if (pinHandle) { pinHandle.remove(); pinHandle = null; } },
+    async highlightIso(iso) {
+      if (pinHandle) { pinHandle.remove(); pinHandle = null; }
+      if (!/^[A-Z]{2}$/.test(iso)) return;
+      const ids = await countries.queryObjectIds({ where: `ISO = '${iso}'` });
+      if (ids && ids.length && state.pinned && state.shownIso === iso) pinHandle = layerView.highlight(ids);
+    },
+  };
+  if (state.pinned) mapApi.highlightIso(state.shownIso);
+}
+
+/* ---------------- start ---------------- */
+initControls();
+const params = new URLSearchParams(location.search);
+const startYear = +params.get("year");
+if (YEARS.includes(startYear)) state.year = startYear;
+setYear(state.year);
+const startIso = (params.get("country") || "").toUpperCase();
+if (DATA.areas[startIso] && startIso !== "WORLD") selectArea(startIso, DATA.areas[startIso].n, { pin: true });
+else selectArea("WORLD", "World");
+
+initMap().catch((err) => {
+  console.error(err);
+  showMapMsg("The world map couldn't load. You can still choose any country from the Country list above.");
+});
+</script>
+</body>
+</html>
